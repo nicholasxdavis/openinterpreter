@@ -3,6 +3,10 @@
 <p align="center">A coding agent for low-cost models.</p>
 
 <p align="center">
+  <b>English</b> • <a href="README_ES.md">Español</a>
+</p>
+
+<p align="center">
   <a href="https://discord.gg/Hvz9Axh84z"><img alt="Discord" src="https://img.shields.io/discord/1146610656779440188?style=flat-square&label=Discord" /></a>
   <a href="https://www.openinterpreter.com/docs/terminal"><img alt="Documentation" src="https://img.shields.io/badge/Documentation-white?style=flat-square" /></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache--2.0-white?style=flat-square" /></a>
