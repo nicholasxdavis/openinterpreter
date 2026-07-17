@@ -1,30 +1,34 @@
+<!-- README translation source: README.md sha256=3e51f07f762d9c90dbb96887f859906cda9d3b242c5d98afecaadae2e5cbb73e -->
+
 <h1 align="center">Open Interpreter</h1>
 
-<p align="center">Un agente de programación para modelos de bajo costo.</p>
+<p align="center">Un agente de programación optimizado para modelos de bajo costo. <a href="https://www.openinterpreter.com/blog/open-interpreter?utm_source=github&amp;utm_medium=referral&amp;utm_campaign=readme&amp;utm_content=hero_text"><strong>Artículo del blog ↗</strong></a></p>
 
 <p align="center">
-  <a href="README.md">English</a> • <b>Español</b>
+  <a href="README.md">English</a> • <b>Español</b> • <a href="README_ZH.md">简体中文</a>
 </p>
 
 <p align="center">
   <a href="https://discord.gg/Hvz9Axh84z"><img alt="Discord" src="https://img.shields.io/discord/1146610656779440188?style=flat-square&label=Discord" /></a>
-  <a href="https://www.openinterpreter.com/docs/terminal"><img alt="Documentación" src="https://img.shields.io/badge/Documentation-white?style=flat-square" /></a>
+  <a href="https://www.openinterpreter.com/docs/terminal?utm_source=github&amp;utm_medium=referral&amp;utm_campaign=readme&amp;utm_content=docs_badge"><img alt="Documentación" src="https://img.shields.io/badge/Documentation-white?style=flat-square" /></a>
   <a href="LICENSE"><img alt="Licencia" src="https://img.shields.io/badge/License-Apache--2.0-white?style=flat-square" /></a>
 </p>
 
+> [!NOTE]
+> **Hoy: Kimi K3 ya está aquí.** Hemos reimplementado en Rust el harness
+> [Kimi Code](https://www.kimi.com/coding/en) recomendado por el proveedor,
+> para ofrecer el máximo rendimiento de K3 con una interfaz similar a Codex.
+> [**Documentación de Kimi →**](https://www.openinterpreter.com/docs/terminal/kimi-k3?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=kimi_k3_note)
+
+<br>
+
 <p align="center">
-  <a href="https://www.openinterpreter.com/docs/terminal">
-    <img alt="Un primer plano de la pantalla de una computadora portátil ejecutando un agente de terminal" src="https://www.openinterpreter.com/blog/open-interpreter-1-0/blog-hero-1.jpg" width="720" />
+  <a href="https://www.openinterpreter.com/blog/open-interpreter?utm_source=github&amp;utm_medium=referral&amp;utm_campaign=readme&amp;utm_content=hero_image">
+    <img alt="Open Interpreter ejecutándose en una terminal" src="https://openinterpreter.com/blog/open-interpreter/blog-hero-1.jpg" width="100%" />
   </a>
 </p>
 
-> [!NOTE]
-> Esta es la nueva versión en Rust de Open Interpreter. ¿Buscas el proyecto original en Python? Continúa como una bifurcación mantenida por la comunidad en [endolith/open-interpreter](https://github.com/endolith/open-interpreter).
-
-> [!TIP]
-> **Nuevo: GLM-5.2 con emulación ZCode.** Open Interpreter ahora incluye un arnés `zcode` nativo de Rust para GLM-5.2, diseñado para brindar a GLM su mejor flujo de trabajo de agente de programación directamente en tu terminal.
-
-### Instalación
+## Instalación
 
 macOS y Linux:
 
@@ -38,13 +42,13 @@ Windows:
 irm https://www.openinterpreter.com/install.ps1 | iex
 ```
 
-Luego escribe `i` o `interpreter` en tu terminal para iniciar una sesión.
+Después, escribe `i` o `interpreter` en tu terminal para iniciar una sesión.
 
-### Emulación de arnés
+## Emulación de harnesses
 
-Open Interpreter es una bifurcación (fork) de Codex de OpenAI, con un enfoque en emular el arnés del agente que obtiene el mejor rendimiento de modelos de bajo costo.
+Open Interpreter es un fork de Codex de OpenAI enfocado en emular el harness de agente que ofrece el mejor rendimiento con modelos de bajo costo.
 
-Usa `/harness` para cambiar el arnés activo:
+Usa `/harness` para cambiar el harness activo:
 
 ```text
 > /harness
@@ -53,6 +57,7 @@ native
 claude-code
 claude-code-bare
 zcode
+kimi-code
 kimi-cli
 qwen-code
 deepseek-tui
@@ -60,33 +65,56 @@ swe-agent
 minimal
 ```
 
-Lee más en la [documentación del arnés](https://www.openinterpreter.com/docs/terminal/harness) y en la [documentación de proveedores de modelos](https://www.openinterpreter.com/docs/terminal/providers).
+Consulta la [documentación de harnesses](https://www.openinterpreter.com/docs/terminal/harness?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=harness_docs) y las [guías de configuración de proveedores](https://www.openinterpreter.com/docs/terminal/providers?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=provider_guides).
 
-### Uso de computadora
+## Compatible con ACP y Codex
 
-Open Interpreter incluye una habilidad de control de calidad (QA skill) que permite a cualquier modelo operar y probar interfaces. Puede controlar aplicaciones web en un navegador real con [agent-browser](https://github.com/vercel-labs/agent-browser), o bien operar y probar aplicaciones nativas con [trycua](https://github.com/trycua/cua).
+Open Interpreter funciona en [editores y clientes compatibles con ACP](https://agentclientprotocol.com/get-started/clients). Configura el cliente para ejecutar `interpreter acp`; consulta la [guía de ACP](https://www.openinterpreter.com/docs/terminal/acp) para ver ejemplos.
 
-### Características
+¿Ya estás desarrollando con el SDK de Codex de OpenAI? Conserva el SDK y cambia una sola línea para usar otro binario:
 
-- Ejecuta comandos dentro de un entorno aislado (sandboxing) nativo en macOS, Linux y Windows.
-- Cambia proveedores y modelos desde la interfaz de usuario de terminal (TUI) con `/model`.
-- Inspecciona o cambia arneses de modelos nativos de Rust con `/harness`.
-- Prueba aplicaciones web y nativas a través de la habilidad de QA integrada.
-- Se ejecuta como un agente del [Protocolo de Cliente de Agente](https://agentclientprotocol.com/) (ACP) para editores con `interpreter acp`.
-- Mantiene la configuración y el estado de la sesión localmente bajo `~/.openinterpreter`.
-- Soporta `exec`, MCP, habilidades, hooks (ganchos), permisos y `AGENTS.md`.
+```diff
+-const codex = new Codex();
++const codex = new Codex({ codexPathOverride: "interpreter" });
+```
 
-### Documentación
+Open Interpreter utiliza el mismo protocolo `exec` que Codex. Consulta la [guía del SDK](https://www.openinterpreter.com/docs/terminal/sdk) y ejecuta `scripts/test-codex-sdk-compat.sh` para realizar una comprobación local de compatibilidad que no requiere un proveedor.
 
-- [Docs de la Terminal](https://www.openinterpreter.com/docs/terminal)
-- [Guía de inicio rápido](https://www.openinterpreter.com/docs/terminal/quickstart)
-- [Guía de instalación](https://www.openinterpreter.com/docs/terminal/install)
-- [Configuración](https://www.openinterpreter.com/docs/terminal/config)
-- [Referencia de CLI](https://www.openinterpreter.com/docs/terminal/cli-reference)
-- [Arneses](https://www.openinterpreter.com/docs/terminal/harness)
-- [Proveedores de modelos](https://www.openinterpreter.com/docs/terminal/providers)
-- [Aislamiento y aprobaciones](https://www.openinterpreter.com/docs/terminal/sandbox)
+## Uso de la computadora
 
-### Licencia
+Open Interpreter incluye una habilidad de QA que permite a cualquier modelo operar y probar interfaces. Puede controlar aplicaciones web en un navegador real con [agent-browser](https://github.com/vercel-labs/agent-browser), o manejar y probar aplicaciones nativas con [trycua](https://github.com/trycua/cua).
+
+## Características
+
+- Ejecuta comandos con aislamiento nativo en macOS, Linux y Windows.
+- Cambia de proveedor y modelo desde la TUI con `/model`.
+- Inspecciona o cambia harnesses de modelos nativos de Rust con `/harness`.
+- Prueba aplicaciones web y nativas mediante la habilidad de QA integrada.
+- Funciona como agente del [Protocolo de Cliente de Agente](https://agentclientprotocol.com/) para editores mediante `interpreter acp`.
+- Mantiene la configuración y el estado de las sesiones en `~/.openinterpreter`.
+- Es compatible con `exec`, MCP, habilidades, hooks, permisos y `AGENTS.md`.
+
+## Documentación
+
+- [Documentación de la terminal](https://www.openinterpreter.com/docs/terminal?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=terminal_docs)
+- [Inicio rápido](https://www.openinterpreter.com/docs/terminal/quickstart?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=quickstart)
+- [Guía de instalación](https://www.openinterpreter.com/docs/terminal/install?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=install_guide)
+- [Configuración](https://www.openinterpreter.com/docs/terminal/config?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=configuration)
+- [Referencia de la CLI](https://www.openinterpreter.com/docs/terminal/cli-reference?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=cli_reference)
+- [Harnesses](https://www.openinterpreter.com/docs/terminal/harness?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=harnesses)
+- [Guías de proveedores de modelos](https://www.openinterpreter.com/docs/terminal/providers?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=provider_guides)
+  - [Kimi K3](https://www.openinterpreter.com/docs/terminal/kimi-k3?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=kimi_k3_docs)
+  - [DeepSeek](https://www.openinterpreter.com/docs/terminal/deepseek?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=deepseek_docs)
+  - [Z.AI, GLM y ZCode](https://www.openinterpreter.com/docs/terminal/zai-glm?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=zai_glm_docs)
+- [Protocolo de Cliente de Agente](https://www.openinterpreter.com/docs/terminal/acp)
+- [SDK de Codex](https://www.openinterpreter.com/docs/terminal/sdk)
+- [Aislamiento y aprobaciones](https://www.openinterpreter.com/docs/terminal/sandbox?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=sandbox_approvals)
+
+La lista de proveedores y modelos se genera automáticamente; no se mantiene como listas en Rust. Desde `codex-rs`, actualiza todos los proveedores alojados con `python3 scripts/write_provider_catalog.py`, o repite `--provider <provider-id>` para actualizar solo los proveedores seleccionados. Las fuentes de modelos en vivo requieren las credenciales del proveedor que se indican en la [documentación de proveedores](https://www.openinterpreter.com/docs/terminal/providers?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=provider_catalog_generation).
+
+> [!NOTE]
+> Esta es la nueva versión de Open Interpreter en Rust, basada en Codex. ¿Buscas el proyecto original en Python? Continúa como un fork mantenido por la comunidad en [endolith/open-interpreter](https://github.com/endolith/open-interpreter).
+
+## Licencia
 
 Apache-2.0
