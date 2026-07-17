@@ -4,6 +4,8 @@ use super::AnalyticsEventsQueue;
 #[cfg(debug_assertions)]
 use super::capture_track_events_request;
 #[cfg(debug_assertions)]
+use super::send_track_events;
+#[cfg(debug_assertions)]
 use super::send_track_events_request;
 use super::track_event_request_batches;
 use crate::events::CodexAcceptedLineFingerprintsEventParams;
@@ -235,6 +237,77 @@ async fn capture_file_writes_final_batches_as_separate_lines() {
         "codex_accepted_line_fingerprints"
     );
     assert_eq!(payloads[2]["events"][0]["skill_id"], "skill-thread-3");
+
+    fs::remove_file(capture_path).expect("remove capture file");
+}
+
+#[tokio::test]
+#[cfg(debug_assertions)]
+async fn api_key_auth_sends_events_anonymously_to_interpreter_backend() {
+    let capture_path = unique_capture_path("api-key-events");
+    let destination = AnalyticsEventsDestination::CaptureFile {
+        path: capture_path.clone(),
+    };
+    let auth_manager = codex_login::AuthManager::from_auth_for_testing(
+        codex_login::CodexAuth::from_api_key("sk-test"),
+    );
+
+    send_track_events(
+        &auth_manager,
+        &destination,
+        vec![
+            sample_regular_track_event("skill-event"),
+            sample_accepted_line_fingerprint_event("other-event"),
+        ],
+    )
+    .await;
+
+    let contents = fs::read_to_string(&capture_path).expect("read capture file");
+    let payloads = contents
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("parse capture line"))
+        .collect::<Vec<_>>();
+    assert_eq!(payloads.len(), 2);
+    let events = payloads
+        .iter()
+        .flat_map(|payload| payload["events"].as_array().expect("events array"))
+        .collect::<Vec<_>>();
+    for event in &events {
+        let event_params = event["event_params"].as_object().expect("event params");
+        for server_owned_field in [
+            "auth_mode",
+            "api_organization_id",
+            "api_project_id",
+            "api_key_tracking_id",
+        ] {
+            assert!(!event_params.contains_key(server_owned_field));
+        }
+    }
+    let delivered_events = events
+        .iter()
+        .map(|event| {
+            serde_json::json!({
+                "event_type": event["event_type"],
+                "plugin_id": event["event_params"]["plugin_id"],
+                "thread_id": event["event_params"]["thread_id"],
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        delivered_events,
+        vec![
+            serde_json::json!({
+                "event_type": "skill_invocation",
+                "plugin_id": null,
+                "thread_id": "skill-event",
+            }),
+            serde_json::json!({
+                "event_type": "codex_accepted_line_fingerprints",
+                "plugin_id": null,
+                "thread_id": "other-event",
+            }),
+        ]
+    );
 
     fs::remove_file(capture_path).expect("remove capture file");
 }

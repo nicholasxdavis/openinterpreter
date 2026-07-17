@@ -447,7 +447,7 @@ mod tests {
     fn test_prompt() -> Prompt {
         Prompt {
             input: vec![ResponseItem::Message {
-                id: Some("user".to_string()),
+                id: Some(std::convert::identity("user".to_string())),
                 role: "user".to_string(),
                 content: vec![ContentItem::InputText {
                     text: "hello".to_string(),
@@ -463,8 +463,12 @@ mod tests {
 
     #[test]
     fn thinking_toggle_model_sends_enabled_by_default() {
-        let (request, _) = build_request(&test_prompt(), &thinking_toggle_model_info(), None)
-            .expect("build request");
+        let (request, _) = build_request(
+            &test_prompt(),
+            &thinking_toggle_model_info(),
+            /*effort*/ None,
+        )
+        .expect("build request");
 
         assert_eq!(request.get("thinking"), Some(&json!({"type": "enabled"})));
     }
@@ -486,7 +490,7 @@ mod tests {
         let prompt = Prompt {
             input: vec![
                 ResponseItem::Message {
-                    id: Some("developer".to_string()),
+                    id: Some(std::convert::identity("developer".to_string())),
                     role: "developer".to_string(),
                     content: vec![ContentItem::InputText {
                         text: "<skills_instructions>\n- imagegen\n</skills_instructions>"
@@ -497,7 +501,7 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::Message {
-                    id: Some("user".to_string()),
+                    id: Some(std::convert::identity("user".to_string())),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
                         text: "$imagegen what is this".to_string(),
@@ -512,7 +516,8 @@ mod tests {
         };
 
         let (request, _) =
-            build_request(&prompt, &thinking_toggle_model_info(), None).expect("build request");
+            build_request(&prompt, &thinking_toggle_model_info(), /*effort*/ None)
+                .expect("build request");
         let messages = request
             .get("messages")
             .and_then(Value::as_array)
@@ -532,7 +537,7 @@ mod tests {
         let prompt = Prompt {
             input: vec![
                 ResponseItem::Message {
-                    id: Some("user".to_string()),
+                    id: Some(std::convert::identity("user".to_string())),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
                         text: "run date".to_string(),
@@ -542,7 +547,7 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::Reasoning {
-                    id: Some("reasoning".to_string()),
+                    id: Some(std::convert::identity("reasoning".to_string())),
                     summary: vec![],
                     content: Some(vec![ReasoningItemContent::ReasoningText {
                         text: "I should inspect the clock.".to_string(),
@@ -568,7 +573,7 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::Message {
-                    id: Some("user2".to_string()),
+                    id: Some(std::convert::identity("user2".to_string())),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
                         text: "what did you run?".to_string(),
@@ -583,7 +588,8 @@ mod tests {
         };
 
         let (request, _) =
-            build_request(&prompt, &thinking_toggle_model_info(), None).expect("build request");
+            build_request(&prompt, &thinking_toggle_model_info(), /*effort*/ None)
+                .expect("build request");
         let messages = request
             .get("messages")
             .and_then(Value::as_array)
@@ -604,7 +610,7 @@ mod tests {
     fn image_content_is_preserved_for_vision_models() {
         let prompt = Prompt {
             input: vec![ResponseItem::Message {
-                id: Some("user".to_string()),
+                id: Some(std::convert::identity("user".to_string())),
                 role: "user".to_string(),
                 content: vec![
                     ContentItem::InputText {
@@ -623,8 +629,12 @@ mod tests {
             ..Prompt::default()
         };
 
-        let (request, _) = build_request(&prompt, &vision_thinking_toggle_model_info(), None)
-            .expect("build request");
+        let (request, _) = build_request(
+            &prompt,
+            &vision_thinking_toggle_model_info(),
+            /*effort*/ None,
+        )
+        .expect("build request");
         let content = &request["messages"][1]["content"];
 
         assert_eq!(

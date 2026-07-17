@@ -108,8 +108,8 @@ impl StreamState {
     fn new() -> Self {
         Self {
             response_id: "chatcmpl-compat".to_string(),
-            message_item_id: "chat-message-1".to_string(),
-            reasoning_item_id: "chat-reasoning-1".to_string(),
+            message_item_id: std::convert::identity("chat-message-1".to_string()),
+            reasoning_item_id: std::convert::identity("chat-reasoning-1".to_string()),
             created_sent: false,
             assistant_item_started: false,
             assistant_text: String::new(),

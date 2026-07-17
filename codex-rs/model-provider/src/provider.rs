@@ -206,6 +206,20 @@ pub trait ModelProvider: fmt::Debug + Send + Sync {
         codex_home: PathBuf,
         config_model_catalog: Option<ModelsResponse>,
     ) -> SharedModelsManager;
+
+    /// Creates a model manager with caching disabled.
+    ///
+    /// Providers that fetch model catalogs should override this method. The default uses an
+    /// authoritative in-memory catalog so hosted callers cannot accidentally write to disk.
+    fn models_manager_without_cache(
+        &self,
+        config_model_catalog: Option<ModelsResponse>,
+    ) -> SharedModelsManager {
+        let model_catalog = config_model_catalog
+            .or_else(|| codex_models_manager::bundled_models_response().ok())
+            .unwrap_or_default();
+        Arc::new(StaticModelsManager::new(self.auth_manager(), model_catalog))
+    }
 }
 
 pub type ModelProviderFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -284,6 +298,9 @@ impl ModelProvider for ConfiguredModelProvider {
                     if auth_manager.refresh_failure_for_auth(&auth).is_some() {
                         return None;
                     }
+                    if matches!(auth, CodexAuth::Headers(_)) {
+                        return None;
+                    }
                     Some(auth)
                 })
                 .map(|auth| match &auth {
@@ -293,6 +310,7 @@ impl ModelProvider for ConfiguredModelProvider {
                     }
                     CodexAuth::Chatgpt(_)
                     | CodexAuth::ChatgptAuthTokens(_)
+                    | CodexAuth::Headers(_)
                     | CodexAuth::AgentIdentity(_)
                     | CodexAuth::PersonalAccessToken(_) => {
                         let email = auth.get_account_email();
@@ -338,12 +356,36 @@ impl ModelProvider for ConfiguredModelProvider {
             }
         }
     }
+    fn models_manager_without_cache(
+        &self,
+        config_model_catalog: Option<ModelsResponse>,
+    ) -> SharedModelsManager {
+        match config_model_catalog {
+            Some(model_catalog) => Arc::new(StaticModelsManager::new(
+                self.auth_manager.clone(),
+                model_catalog,
+            )),
+            None => {
+                let endpoint = Arc::new(OpenAiModelsEndpoint::new(
+                    self.info.clone(),
+                    self.auth_manager.clone(),
+                ));
+                Arc::new(OpenAiModelsManager::new_without_cache_with_base_models(
+                    endpoint,
+                    self.auth_manager.clone(),
+                    bundled_provider_model_infos(&self.info),
+                ))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU64;
 
+    use codex_http_client::HttpClientFactory;
+    use codex_http_client::OutboundProxyPolicy;
     use codex_login::auth::AgentIdentityAuthPolicy;
     use codex_login::auth::BedrockApiKeyAuth;
     use codex_model_provider_info::ModelProviderAwsAuthInfo;
@@ -660,26 +702,34 @@ mod tests {
         let manager =
             provider.models_manager(test_codex_home(), /*config_model_catalog*/ None);
 
-        let catalog = manager.raw_model_catalog(RefreshStrategy::Online).await;
-        let model_ids = catalog
+        let catalog = manager
+            .raw_model_catalog(
+                RefreshStrategy::Online,
+                HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+            )
+            .await;
+        let models = catalog
             .models
             .iter()
-            .map(|model| model.slug.as_str())
+            .map(|model| (model.slug.as_str(), model.display_name.as_str()))
             .collect::<Vec<_>>();
 
         assert_eq!(
-            model_ids,
+            models,
             vec![
-                "openai.gpt-5.5",
-                "openai.gpt-5.4",
-                "openai.gpt-5.6-sol",
-                "openai.gpt-5.6-terra",
-                "openai.gpt-5.6-luna",
+                ("openai.gpt-5.5", "GPT-5.5"),
+                ("openai.gpt-5.4", "GPT-5.4"),
+                ("openai.gpt-5.6-sol", "GPT-5.6 Sol"),
+                ("openai.gpt-5.6-terra", "GPT-5.6 Terra"),
+                ("openai.gpt-5.6-luna", "GPT-5.6 Luna"),
             ]
         );
 
         let default_model = manager
-            .list_models(RefreshStrategy::Online)
+            .list_models(
+                RefreshStrategy::Online,
+                HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+            )
             .await
             .into_iter()
             .find(|preset| preset.is_default)
@@ -710,7 +760,12 @@ mod tests {
             }),
         );
 
-        let catalog = manager.raw_model_catalog(RefreshStrategy::Online).await;
+        let catalog = manager
+            .raw_model_catalog(
+                RefreshStrategy::Online,
+                HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+            )
+            .await;
 
         assert_eq!(catalog.models.len(), 1);
         assert_eq!(catalog.models[0].slug, "gpt-5.5");
@@ -752,7 +807,12 @@ mod tests {
 
         let manager =
             provider.models_manager(test_codex_home(), /*config_model_catalog*/ None);
-        let catalog = manager.raw_model_catalog(RefreshStrategy::Online).await;
+        let catalog = manager
+            .raw_model_catalog(
+                RefreshStrategy::Online,
+                HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+            )
+            .await;
 
         assert!(
             catalog

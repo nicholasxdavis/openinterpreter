@@ -132,7 +132,10 @@ async fn responses_stream_includes_subagent_header_on_review() {
         /*beta_features_header*/ None,
         codex_tools::Harness::Native,
         /*harness_guidance*/ true,
+        /*item_ids_enabled*/ false,
+        /*concurrent_reasoning_summaries_enabled*/ false,
         /*attestation_provider*/ None,
+        config.http_client_factory(),
     );
     let responses_metadata = test_turn_responses_metadata(&client, thread_id, &session_source);
     let mut client_session = client.new_session();
@@ -267,7 +270,10 @@ async fn responses_stream_includes_subagent_header_on_other() {
         /*beta_features_header*/ None,
         codex_tools::Harness::Native,
         /*harness_guidance*/ true,
+        /*item_ids_enabled*/ false,
+        /*concurrent_reasoning_summaries_enabled*/ false,
         /*attestation_provider*/ None,
+        config.http_client_factory(),
     );
     let responses_metadata = test_turn_responses_metadata(&client, thread_id, &session_source);
     let mut client_session = client.new_session();
@@ -388,7 +394,10 @@ async fn responses_respects_model_info_overrides_from_config() {
         /*beta_features_header*/ None,
         codex_tools::Harness::Native,
         /*harness_guidance*/ true,
+        /*item_ids_enabled*/ false,
+        /*concurrent_reasoning_summaries_enabled*/ false,
         /*attestation_provider*/ None,
+        config.http_client_factory(),
     );
     let responses_metadata = test_turn_responses_metadata(&client, thread_id, &session_source);
     let mut client_session = client.new_session();

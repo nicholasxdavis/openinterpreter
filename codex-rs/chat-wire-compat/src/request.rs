@@ -833,17 +833,18 @@ mod tests {
                 phase: None,
                 internal_chat_message_metadata_passthrough: None,
             }],
-            tools: vec![json!({
+            tools: Some(vec![json!({
                 "type": "function",
                 "name": "shell_command",
                 "description": "Run a shell command",
                 "parameters": { "type": "object" }
-            })],
+            })]),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,
             store: false,
             stream: true,
+            stream_options: None,
             include: Vec::new(),
             service_tier: None,
             prompt_cache_key: None,
@@ -878,12 +879,13 @@ mod tests {
                 phase: None,
                 internal_chat_message_metadata_passthrough: None,
             }],
-            tools: Vec::new(),
+            tools: Some(Vec::new()),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,
             store: false,
             stream: true,
+            stream_options: None,
             include: Vec::new(),
             service_tier: None,
             prompt_cache_key: None,
@@ -914,7 +916,7 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::Reasoning {
-                    id: Some("reasoning-1".to_string()),
+                    id: Some(std::convert::identity("reasoning-1".to_string())),
                     summary: Vec::new(),
                     content: Some(vec![ReasoningItemContent::ReasoningText {
                         text: "I need to inspect the directory.".to_string(),
@@ -937,17 +939,18 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
             ],
-            tools: vec![json!({
+            tools: Some(vec![json!({
                 "type": "function",
                 "name": "shell",
                 "description": "Run a command",
                 "parameters": { "type": "object" }
-            })],
+            })]),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,
             store: false,
             stream: true,
+            stream_options: None,
             include: Vec::new(),
             service_tier: None,
             prompt_cache_key: None,
@@ -982,7 +985,7 @@ mod tests {
                 call_id: "call-lookup".to_string(),
                 internal_chat_message_metadata_passthrough: None,
             }],
-            tools: vec![json!({
+            tools: Some(vec![json!({
                 "type": "namespace",
                 "name": "mcp__demo__",
                 "description": "Demo tools",
@@ -1001,12 +1004,13 @@ mod tests {
                         }
                     }
                 ]
-            })],
+            })]),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,
             store: false,
             stream: true,
+            stream_options: None,
             include: Vec::new(),
             service_tier: None,
             prompt_cache_key: None,
@@ -1110,7 +1114,7 @@ mod tests {
             instructions: String::new(),
             input: vec![
                 ResponseItem::Reasoning {
-                    id: Some("reasoning-1".to_string()),
+                    id: Some(std::convert::identity("reasoning-1".to_string())),
                     summary: Vec::new(),
                     content: Some(vec![ReasoningItemContent::ReasoningText {
                         text: "Need to inspect files.".to_string(),
@@ -1136,17 +1140,18 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
             ],
-            tools: vec![json!({
+            tools: Some(vec![json!({
                 "type": "function",
                 "name": "Read",
                 "description": "Read a file",
                 "parameters": { "type": "object" }
-            })],
+            })]),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,
             store: false,
             stream: true,
+            stream_options: None,
             include: Vec::new(),
             service_tier: None,
             prompt_cache_key: None,
@@ -1197,7 +1202,7 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::Reasoning {
-                    id: Some("reasoning-1".to_string()),
+                    id: Some(std::convert::identity("reasoning-1".to_string())),
                     summary: Vec::new(),
                     content: Some(vec![ReasoningItemContent::ReasoningText {
                         text: "Need to inspect both files.".to_string(),
@@ -1232,17 +1237,18 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
             ],
-            tools: vec![json!({
+            tools: Some(vec![json!({
                 "type": "function",
                 "name": "Read",
                 "description": "Read a file",
                 "parameters": { "type": "object" }
-            })],
+            })]),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,
             store: false,
             stream: true,
+            stream_options: None,
             include: Vec::new(),
             service_tier: None,
             prompt_cache_key: None,
@@ -1271,7 +1277,7 @@ mod tests {
             instructions: String::new(),
             input: vec![
                 ResponseItem::Reasoning {
-                    id: Some("reasoning-1".to_string()),
+                    id: Some(std::convert::identity("reasoning-1".to_string())),
                     summary: Vec::new(),
                     content: Some(vec![ReasoningItemContent::ReasoningText {
                         text: "Need one more directory listing.".to_string(),
@@ -1326,17 +1332,18 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
             ],
-            tools: vec![json!({
+            tools: Some(vec![json!({
                 "type": "function",
                 "name": "Bash",
                 "description": "Run a command",
                 "parameters": { "type": "object" }
-            })],
+            })]),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,
             store: false,
             stream: true,
+            stream_options: None,
             include: Vec::new(),
             service_tier: None,
             prompt_cache_key: None,
@@ -1386,15 +1393,16 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
             ],
-            tools: vec![json!({
+            tools: Some(vec![json!({
                 "type": "tool_search",
                 "description": "Search available tools"
-            })],
+            })]),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,
             store: false,
             stream: true,
+            stream_options: None,
             include: Vec::new(),
             service_tier: None,
             prompt_cache_key: None,
@@ -1441,12 +1449,13 @@ mod tests {
                 phase: None,
                 internal_chat_message_metadata_passthrough: None,
             }],
-            tools: Vec::new(),
+            tools: Some(Vec::new()),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,
             store: false,
             stream: true,
+            stream_options: None,
             include: Vec::new(),
             service_tier: None,
             prompt_cache_key: None,

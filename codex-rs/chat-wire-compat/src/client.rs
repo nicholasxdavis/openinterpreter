@@ -340,7 +340,7 @@ fn sanitize_chat_body_for_provider(body: &mut Value, base_url: &str) {
     if !is_groq {
         return;
     }
-    cap_chat_token_limits(body, 32_768);
+    cap_chat_token_limits(body, /*cap*/ 32_768);
     if let Some(obj) = body.as_object_mut() {
         // `prompt_cache_key` is a Kimi/OpenAI extension (kimi-cli, kimi-code).
         obj.remove("prompt_cache_key");
@@ -781,7 +781,8 @@ mod tests {
         });
 
         let retry_body =
-            openrouter_affordability_retry_body(true, &body, &error).expect("retry body");
+            openrouter_affordability_retry_body(/*is_openrouter*/ true, &body, &error)
+                .expect("retry body");
 
         assert_eq!(retry_body["max_completion_tokens"], serde_json::json!(140));
         assert_eq!(retry_body["max_tokens"], serde_json::json!(140));
@@ -832,12 +833,13 @@ mod tests {
                 phase: None,
                 internal_chat_message_metadata_passthrough: None,
             }],
-            tools: Vec::new(),
+            tools: Some(Vec::new()),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,
             store: false,
             stream: true,
+            stream_options: None,
             include: Vec::new(),
             service_tier: None,
             prompt_cache_key: None,

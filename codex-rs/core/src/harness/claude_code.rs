@@ -276,6 +276,7 @@ pub(crate) fn build_claude_code_responses_shaped_request(
         reasoning: None,
         store: false,
         stream: true,
+        stream_options: None,
         include: Vec::new(),
         service_tier: None,
         prompt_cache_key,
@@ -2498,7 +2499,11 @@ mod tests {
             description: "bash".to_string(),
             strict: false,
             defer_loading: None,
-            parameters: codex_tools::JsonSchema::object(BTreeMap::new(), None, None),
+            parameters: codex_tools::JsonSchema::object(
+                BTreeMap::new(),
+                /*required*/ None,
+                /*additional_properties*/ None,
+            ),
             output_schema: None,
         })
     }
@@ -2625,9 +2630,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
         assert_eq!(request.model, "claude-sonnet-4-6");
@@ -2795,9 +2800,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -2862,9 +2867,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -2920,9 +2925,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -2993,9 +2998,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -3022,9 +3027,9 @@ mod tests {
         let request = build_request_for_profile(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
             ClaudeCodeProfile::Bare,
         )
         .expect("build request");
@@ -3063,9 +3068,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-opus-4-7"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -3108,9 +3113,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-opus-4-7"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -3170,9 +3175,19 @@ mod tests {
                 format: None,
             })
         );
+        let stable_child_prompt = request.system[2]
+            .text
+            .lines()
+            .filter(|line| {
+                !line.starts_with("Platform: ")
+                    && !line.starts_with("Shell: ")
+                    && !line.starts_with("OS Version: ")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         assert_eq!(
-            request.system[2].text,
-            "You are an agent for Claude Code, Anthropic's official CLI for Claude. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.\n\nYour strengths:\n- Searching for code, configurations, and patterns across large codebases\n- Analyzing multiple files to understand system architecture\n- Investigating complex questions that require exploring many files\n- Performing multi-step research tasks\n\nGuidelines:\n- For file searches: search broadly when you don't know where something lives. Use Read when you know the specific file path.\n- For analysis: Start broad and narrow down. Use multiple search strategies if the first doesn't yield results.\n- Be thorough: Check multiple locations, consider different naming conventions, look for related files.\n- NEVER create files unless they're absolutely necessary for achieving your goal. ALWAYS prefer editing an existing file to creating a new one.\n- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested.\n\nNotes:\n- Agent threads always have their cwd reset between bash calls, as a result please only use absolute file paths.\n- In your final response, share file paths (always absolute, never relative) that are relevant to the task. Include code snippets only when the exact text is load-bearing (e.g., a bug you found, a function signature the caller asked for) — do not recap code you merely read.\n- For clear communication with the user the assistant MUST avoid using emojis.\n- Do not use a colon before tool calls. Text like \"Let me read the file:\" followed by a read tool call should just be \"Let me read the file.\" with a period.\n\nHere is useful information about the environment you are running in:\n<env>\nWorking directory: /tmp/workspace\nIs directory a git repo: No\nPlatform: darwin\nShell: zsh\nOS Version: Darwin 25.2.0\n</env>\nYou are powered by the model named Sonnet 4.6. The exact model ID is claude-sonnet-4-6.\n\nAssistant knowledge cutoff is August 2025."
+            stable_child_prompt,
+            "You are an agent for Claude Code, Anthropic's official CLI for Claude. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.\n\nYour strengths:\n- Searching for code, configurations, and patterns across large codebases\n- Analyzing multiple files to understand system architecture\n- Investigating complex questions that require exploring many files\n- Performing multi-step research tasks\n\nGuidelines:\n- For file searches: search broadly when you don't know where something lives. Use Read when you know the specific file path.\n- For analysis: Start broad and narrow down. Use multiple search strategies if the first doesn't yield results.\n- Be thorough: Check multiple locations, consider different naming conventions, look for related files.\n- NEVER create files unless they're absolutely necessary for achieving your goal. ALWAYS prefer editing an existing file to creating a new one.\n- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested.\n\nNotes:\n- Agent threads always have their cwd reset between bash calls, as a result please only use absolute file paths.\n- In your final response, share file paths (always absolute, never relative) that are relevant to the task. Include code snippets only when the exact text is load-bearing (e.g., a bug you found, a function signature the caller asked for) — do not recap code you merely read.\n- For clear communication with the user the assistant MUST avoid using emojis.\n- Do not use a colon before tool calls. Text like \"Let me read the file:\" followed by a read tool call should just be \"Let me read the file.\" with a period.\n\nHere is useful information about the environment you are running in:\n<env>\nWorking directory: /tmp/workspace\nIs directory a git repo: No\n</env>\nYou are powered by the model named Sonnet 4.6. The exact model ID is claude-sonnet-4-6.\n\nAssistant knowledge cutoff is August 2025."
         );
     }
 
@@ -3222,9 +3237,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -3287,9 +3302,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -3391,9 +3406,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
         let serialized = serde_json::to_string(&request).expect("serialize request");
@@ -3484,9 +3499,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
         let serialized = serde_json::to_string(&request).expect("serialize request");
@@ -3557,9 +3572,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
         let tool_result_texts = request
@@ -3682,9 +3697,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
         let serialized = serde_json::to_string(&request).expect("serialize request");
@@ -3771,9 +3786,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
         let serialized = serde_json::to_string(&request).expect("serialize request");
@@ -3835,9 +3850,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -3975,7 +3990,12 @@ mod tests {
             },
         ];
 
-        let tools = build_tools(&tools, false, ClaudeCodeProfile::Full).expect("build tools");
+        let tools = build_tools(
+            &tools,
+            /*is_child_agent_request*/ false,
+            ClaudeCodeProfile::Full,
+        )
+        .expect("build tools");
 
         assert_eq!(
             tools
@@ -4139,9 +4159,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-sonnet-4-6"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -4309,7 +4329,12 @@ mod tests {
                 image_url: "data:image/png;base64,AAAB".to_string(),
                 detail: None,
             }]);
-        let content = build_claude_tool_result_content(Some("Read"), &body, false, None);
+        let content = build_claude_tool_result_content(
+            Some("Read"),
+            &body,
+            /*is_error*/ false,
+            /*todo_reminder_text*/ None,
+        );
         let json = serde_json::to_value(&content).expect("serialize tool result");
         assert_eq!(
             json,
@@ -4364,9 +4389,9 @@ mod tests {
         let request = build_request(
             &prompt,
             &test_model_info("claude-opus-4-7"),
-            None,
+            /*effort*/ None,
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -4409,7 +4434,7 @@ mod tests {
             &test_model_info("claude-opus-4-7"),
             Some(ReasoningEffortConfig::Medium),
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -4452,7 +4477,7 @@ mod tests {
             &test_model_info("anthropic/claude-opus-4.7"),
             Some(ReasoningEffortConfig::XHigh),
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -4495,7 +4520,7 @@ mod tests {
             &test_model_info("anthropic/claude-sonnet-4.6"),
             Some(ReasoningEffortConfig::Medium),
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
@@ -4538,13 +4563,15 @@ mod tests {
             &thinking_only_model_info("claude-haiku-4-5-20251001"),
             Some(ReasoningEffortConfig::High),
             "session-123",
-            None,
+            /*session_source*/ None,
         )
         .expect("build request");
 
         assert_eq!(
             request.thinking,
-            Some(AnthropicThinkingConfig::enabled(31_999))
+            Some(AnthropicThinkingConfig::enabled(
+                /*budget_tokens*/ 31_999
+            ))
         );
         assert_eq!(request.output_config, None);
     }
@@ -4555,7 +4582,11 @@ mod tests {
             description: name.to_string(),
             strict: false,
             defer_loading: None,
-            parameters: codex_tools::JsonSchema::object(BTreeMap::new(), None, None),
+            parameters: codex_tools::JsonSchema::object(
+                BTreeMap::new(),
+                /*required*/ None,
+                /*additional_properties*/ None,
+            ),
             output_schema: None,
         })
     }
@@ -4595,7 +4626,7 @@ mod tests {
         let request = build_claude_code_responses_shaped_request(
             &prompt,
             &test_model_info("deepseek-v4-pro"),
-            None,
+            /*session_source*/ None,
             ClaudeCodeProfile::Bare,
             Some("thread-123".to_string()),
         )
@@ -4650,9 +4681,9 @@ mod tests {
         let request = build_claude_code_responses_shaped_request(
             &prompt,
             &test_model_info("claude-opus-4-7"),
-            None,
+            /*session_source*/ None,
             ClaudeCodeProfile::Full,
-            None,
+            /*prompt_cache_key*/ None,
         )
         .expect("build full chat shaping");
 

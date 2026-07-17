@@ -3,6 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use codex_code_mode_protocol::CodeModeSessionProvider;
+use codex_code_mode_protocol::ExecuteRequest;
+use codex_code_mode_protocol::FunctionCallOutputContentItem;
+use codex_code_mode_protocol::RuntimeResponse;
+use pretty_assertions::assert_eq;
 
 use super::ProcessOwnedCodeModeSession;
 use super::ProcessOwnedCodeModeSessionProvider;
@@ -13,8 +17,8 @@ use crate::NoopCodeModeSessionDelegate;
 fn provider_reuses_its_live_process_host() {
     let provider = ProcessOwnedCodeModeSessionProvider::default();
 
-    let first = provider.process_host();
-    let second = provider.process_host();
+    let first = provider.process_host().expect("owned process host");
+    let second = provider.process_host().expect("owned process host");
 
     assert!(Arc::ptr_eq(&first, &second));
 }
@@ -47,6 +51,39 @@ fn host_program_is_next_to_the_main_executable_even_when_missing() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn host_program_follows_the_managed_entrypoint_symlink() {
+    use std::os::unix::fs::symlink;
+    use std::time::SystemTime;
+
+    let unique = SystemTime::UNIX_EPOCH
+        .elapsed()
+        .expect("system time after unix epoch")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "codex-code-mode-managed-entrypoint-{}-{unique}",
+        std::process::id()
+    ));
+    let package_bin = root.join("package/bin");
+    let visible_bin = root.join("visible-bin");
+    std::fs::create_dir_all(&package_bin).expect("create package bin");
+    std::fs::create_dir_all(&visible_bin).expect("create visible bin");
+    let package_entrypoint = package_bin.join("interpreter");
+    let package_host = package_bin.join("codex-code-mode-host");
+    std::fs::write(&package_entrypoint, "entrypoint").expect("write package entrypoint");
+    std::fs::write(&package_host, "host").expect("write package host");
+    let visible_entrypoint = visible_bin.join("interpreter");
+    symlink(&package_entrypoint, &visible_entrypoint).expect("link managed entrypoint");
+
+    assert_eq!(
+        resolve_host_program(/*override_path*/ None, Ok(visible_entrypoint)),
+        package_host.canonicalize().expect("canonical package host")
+    );
+
+    std::fs::remove_dir_all(root).expect("remove test root");
+}
+
 #[test]
 fn host_program_falls_back_to_its_name_when_main_executable_is_unknown() {
     let executable_name = if cfg!(windows) {
@@ -68,18 +105,39 @@ fn host_program_falls_back_to_its_name_when_main_executable_is_unknown() {
 }
 
 #[tokio::test]
-async fn provider_reports_host_spawn_failure() {
+async fn provider_falls_back_to_in_process_session_when_host_is_missing() {
     let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(
         "codex-code-mode-host-does-not-exist".into(),
     );
 
-    let error = provider
+    let session = provider
         .create_session(Arc::new(NoopCodeModeSessionDelegate))
         .await
-        .err()
-        .expect("session creation should fail");
+        .expect("missing host should fall back to an in-process session");
+    let response = session
+        .execute(ExecuteRequest {
+            tool_call_id: "call-1".to_string(),
+            enabled_tools: Vec::new(),
+            source: "text('fallback')".to_string(),
+            yield_time_ms: None,
+            max_output_tokens: None,
+        })
+        .await
+        .expect("execute fallback session")
+        .initial_response()
+        .await
+        .expect("read fallback response");
 
-    assert!(error.contains("failed to spawn code-mode host"));
+    assert_eq!(
+        response,
+        RuntimeResponse::Result {
+            cell_id: codex_code_mode_protocol::CellId::new("1".to_string()),
+            content_items: vec![FunctionCallOutputContentItem::InputText {
+                text: "fallback".to_string(),
+            }],
+            error_text: None,
+        }
+    );
 }
 
 #[tokio::test]

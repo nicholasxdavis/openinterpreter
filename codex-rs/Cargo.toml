@@ -43,6 +43,7 @@ members = [
     "core-plugins",
     "core-skills",
     "hooks",
+    "http-client",
     "secrets",
     "exec",
     "file-system",
@@ -55,6 +56,7 @@ members = [
     "ext/goal",
     "ext/guardian",
     "ext/image-generation",
+    "ext/items",
     "ext/memories",
     "ext/mcp",
     "ext/skills",
@@ -91,6 +93,7 @@ members = [
     "tui",
     "tools",
     "v8-poc",
+    "websocket-client",
     "utils/absolute-path",
     "utils/path-uri",
     "utils/cargo-bin",
@@ -130,7 +133,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.0.20"
+version = "0.0.28"
 # Track the edition for all workspace crates in one place. Individual
 # crates can still override this value, but keeping it here means new
 # crates created with `cargo new -w ...` automatically inherit the 2024
@@ -169,6 +172,8 @@ codex-cloud-tasks-mock-client = { path = "cloud-tasks-mock-client" }
 codex-code-mode = { path = "code-mode" }
 codex-code-mode-protocol = { path = "code-mode-protocol" }
 codex-home = { path = "codex-home" }
+codex-http-client = { path = "http-client" }
+codex-websocket-client = { path = "websocket-client" }
 codex-config = { path = "config" }
 codex-connectors = { path = "connectors" }
 codex-connectors-extension = { path = "ext/connectors" }
@@ -183,6 +188,7 @@ codex-exec-server-protocol = { path = "exec-server-protocol" }
 codex-exec-server = { path = "exec-server" }
 codex-execpolicy = { path = "execpolicy" }
 codex-extension-api = { path = "ext/extension-api" }
+codex-extension-items = { path = "ext/items" }
 codex-goal-extension = { path = "ext/goal" }
 codex-guardian = { path = "ext/guardian" }
 codex-image-generation-extension = { path = "ext/image-generation" }
@@ -267,8 +273,8 @@ mcp_test_support = { path = "mcp-server/tests/common" }
 
 # External
 age = "0.11.1"
-agent-client-protocol = { version = "=0.12.1", features = ["unstable"] }
 allocative = "0.3.3"
+agent-client-protocol = { version = "=0.12.1", features = ["unstable"] }
 ansi-to-tui = "7.0.0"
 anyhow = "1"
 arboard = { version = "3", features = ["wayland-data-control"] }
@@ -430,6 +436,7 @@ thiserror = "2.0.17"
 time = "0.3.47"
 tiny_http = "0.12"
 tokio = "1"
+tokio-rustls = "0.26.4"
 tokio-stream = "0.1.18"
 tokio-test = "0.4"
 tokio-tungstenite = { version = "0.28.0", features = [
@@ -548,8 +555,10 @@ lto = false
 strip = false
 
 [profile.ci-test]
-# Reduce binary size to reduce disk pressure.
-debug = "limited"
+# Nextest archives duplicate the compiled binaries while packing them. Keep CI
+# test binaries free of debug sections so hosted runners have room to archive
+# the full workspace, including the V8-backed code-mode host.
+debug = 0
 inherits = "test"
 opt-level = 0
 

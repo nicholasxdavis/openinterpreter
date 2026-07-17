@@ -19,6 +19,8 @@ use codex_api::AgentIdentityTelemetry;
 use codex_api::ApiError;
 use codex_api::ResponseEvent;
 use codex_api::TransportError;
+use codex_http_client::HttpClientFactory;
+use codex_http_client::OutboundProxyPolicy;
 use codex_login::AuthCredentialsStoreMode;
 use codex_login::AuthKeyringBackendKind;
 use codex_login::AuthManager;
@@ -104,7 +106,10 @@ fn test_model_client_with_thread_id(
         /*beta_features_header*/ None,
         codex_tools::Harness::Native,
         /*harness_guidance*/ true,
+        /*item_ids_enabled*/ false,
+        /*concurrent_reasoning_summaries_enabled*/ false,
         /*attestation_provider*/ None,
+        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
     )
 }
 
@@ -149,7 +154,10 @@ async fn compact_uses_bearer_after_agent_identity_session_fallback() -> anyhow::
         /*beta_features_header*/ None,
         /*harness*/ codex_tools::Harness::default(),
         /*harness_guidance*/ false,
+        /*item_ids_enabled*/ false,
+        /*concurrent_reasoning_summaries_enabled*/ false,
         /*attestation_provider*/ None,
+        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
     );
     let prompt = Prompt {
         input: vec![ResponseItem::Message {
@@ -824,9 +832,12 @@ fn model_client_with_counting_attestation(
         /*beta_features_header*/ None,
         codex_tools::Harness::Native,
         /*harness_guidance*/ true,
+        /*item_ids_enabled*/ false,
+        /*concurrent_reasoning_summaries_enabled*/ false,
         Some(Arc::new(CountingAttestationProvider {
             calls: attestation_calls.clone(),
         })),
+        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
     );
     (model_client, attestation_calls)
 }

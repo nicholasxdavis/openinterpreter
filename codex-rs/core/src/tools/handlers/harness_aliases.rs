@@ -112,6 +112,7 @@ pub enum HarnessAliasHandler {
     Grep,
     GrepLower,
     AskUserQuestion,
+    TaskList,
     TaskOutput,
     TaskStop,
     ChecklistAdd,
@@ -158,6 +159,7 @@ impl ToolExecutor<ToolInvocation> for HarnessAliasHandler {
             Self::Grep => "Grep",
             Self::GrepLower => "grep",
             Self::AskUserQuestion => "AskUserQuestion",
+            Self::TaskList => "TaskList",
             Self::TaskOutput => "TaskOutput",
             Self::TaskStop => "TaskStop",
             Self::ChecklistAdd => "checklist_add",
@@ -216,6 +218,7 @@ impl HarnessAliasHandler {
             Self::Glob | Self::GlobLower => handle_glob(invocation).await,
             Self::Grep | Self::GrepLower => handle_grep(invocation).await,
             Self::AskUserQuestion => handle_ask_user_question(invocation).await,
+            Self::TaskList => handle_task_list(invocation).await,
             Self::TaskOutput => handle_task_output(invocation).await,
             Self::TaskStop => handle_task_stop(invocation).await,
             Self::ChecklistAdd => handle_checklist_add(invocation).await,
@@ -291,6 +294,9 @@ async fn handle_agent(
     if is_zcode {
         return handle_zcode_agent(invocation, args).await;
     }
+    if is_kimi_code(&invocation) && !args.run_in_background {
+        return handle_kimi_code_foreground_agent(invocation, args).await;
+    }
     let fork_turns = "all";
     let task_name = args.description.clone();
     let mut translated = json!({
@@ -328,6 +334,96 @@ async fn handle_agent(
         .await
 }
 
+async fn handle_kimi_code_foreground_agent(
+    invocation: ToolInvocation,
+    args: ClaudeAgentArgs,
+) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
+    let ToolInvocation {
+        session,
+        turn,
+        call_id,
+        ..
+    } = invocation;
+    let role_name = args
+        .subagent_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|subagent_type| !subagent_type.is_empty())
+        .unwrap_or("coder");
+    let task_name = zcode_task_name(&args.description);
+    let child_depth = next_thread_spawn_depth(&turn.session_source);
+    let mut config =
+        build_agent_spawn_config(&session.get_base_instructions().await, turn.as_ref())?;
+    apply_requested_spawn_agent_model_overrides(
+        &session,
+        turn.as_ref(),
+        &mut config,
+        args.model.as_deref(),
+        /*requested_reasoning_effort*/ None,
+    )
+    .await?;
+    apply_role_to_config(&mut config, Some(role_name))
+        .await
+        .map_err(FunctionCallError::RespondToModel)?;
+    apply_spawn_agent_service_tier(
+        &session,
+        &mut config,
+        turn.config.service_tier.as_deref(),
+        /*requested_service_tier*/ None,
+    )
+    .await?;
+    apply_spawn_agent_runtime_overrides(&mut config, turn.as_ref())?;
+
+    let parent_thread_id = session.thread_id();
+    let spawn_source = thread_spawn_source(
+        parent_thread_id,
+        &turn.session_source,
+        child_depth,
+        Some(role_name),
+        Some(task_name),
+    )?;
+    let spawned = Box::pin(session.services.agent_control.spawn_agent_with_metadata(
+        config,
+        vec![UserInput::Text {
+            text: args.prompt,
+            text_elements: Vec::new(),
+        }],
+        Some(spawn_source),
+        SpawnAgentOptions {
+            fork_parent_spawn_call_id: Some(call_id),
+            parent_thread_id: Some(parent_thread_id),
+            environments: Some(turn.environments.to_selections()),
+            ..Default::default()
+        },
+    ))
+    .await
+    .map_err(collab_spawn_error)?;
+    let status = wait_for_agent_final_status(&session.services.agent_control, spawned.thread_id)
+        .await
+        .unwrap_or(spawned.status);
+    let result = match status {
+        AgentStatus::Completed(Some(message)) => message,
+        AgentStatus::Completed(None) => String::new(),
+        AgentStatus::Errored(message) => return Err(FunctionCallError::RespondToModel(message)),
+        AgentStatus::Interrupted
+        | AgentStatus::NotFound
+        | AgentStatus::PendingInit
+        | AgentStatus::Running
+        | AgentStatus::Shutdown => {
+            return Err(FunctionCallError::RespondToModel(format!(
+                "Agent ended with status {status:?}"
+            )));
+        }
+    };
+    Ok(boxed_tool_output(FunctionToolOutput::from_text(
+        format!(
+            "agent_id: {}\nactual_subagent_type: {role_name}\nstatus: completed\n\n[summary]\n{result}",
+            spawned.thread_id
+        ),
+        Some(true),
+    )))
+}
+
 async fn handle_zcode_agent(
     invocation: ToolInvocation,
     args: ClaudeAgentArgs,
@@ -353,7 +449,7 @@ async fn handle_zcode_agent(
         turn.as_ref(),
         &mut config,
         args.model.as_deref(),
-        None,
+        /*requested_reasoning_effort*/ None,
     )
     .await?;
     apply_role_to_config(&mut config, Some(role_name))
@@ -363,7 +459,7 @@ async fn handle_zcode_agent(
         &session,
         &mut config,
         turn.config.service_tier.as_deref(),
-        None,
+        /*requested_service_tier*/ None,
     )
     .await?;
     apply_spawn_agent_runtime_overrides(&mut config, turn.as_ref())?;
@@ -616,6 +712,15 @@ fn is_claude_code(invocation: &ToolInvocation) -> bool {
         .harness
         .as_deref()
         .is_some_and(|harness| matches!(harness, "claude-code" | "claude-code-bare"))
+}
+
+fn is_kimi_code(invocation: &ToolInvocation) -> bool {
+    invocation
+        .turn
+        .config
+        .harness
+        .as_deref()
+        .is_some_and(|harness| harness == "kimi-code")
 }
 
 fn is_deepseek_tui(invocation: &ToolInvocation) -> bool {
@@ -941,18 +1046,54 @@ fn normalize_task_output(output: &str) -> String {
 #[derive(Deserialize)]
 struct TaskOutputArgs {
     task_id: String,
-    #[serde(default = "default_task_output_block")]
-    block: bool,
-    #[serde(default = "default_task_output_timeout")]
-    timeout: u64,
+    block: Option<bool>,
+    timeout: Option<u64>,
 }
 
-fn default_task_output_block() -> bool {
+#[derive(Deserialize)]
+struct TaskListArgs {
+    #[serde(default = "default_task_list_active_only")]
+    active_only: bool,
+    #[serde(default = "default_task_list_limit")]
+    limit: usize,
+}
+
+fn default_task_list_active_only() -> bool {
     true
 }
 
-fn default_task_output_timeout() -> u64 {
-    30_000
+fn default_task_list_limit() -> usize {
+    20
+}
+
+async fn handle_task_list(
+    invocation: ToolInvocation,
+) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
+    let arguments = function_arguments(&invocation.payload)?;
+    let args: TaskListArgs = parse_arguments(arguments)?;
+    let tasks = CLAUDE_TASKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut entries = tasks.iter().collect::<Vec<_>>();
+    entries.sort_by_key(|(task_id, _)| *task_id);
+    entries.truncate(args.limit.clamp(1, 100));
+    let mut lines = vec![format!("background_tasks: {}", entries.len())];
+    for (task_id, task) in entries {
+        lines.extend([
+            format!("task_id: {task_id}"),
+            format!("description: {}", task.description),
+            "status: running".to_string(),
+            "detached: true".to_string(),
+            "kind: process".to_string(),
+            format!("command: {}", task.command),
+            format!("pid: {}", task.process_id),
+        ]);
+    }
+    let _ = args.active_only;
+    Ok(boxed_tool_output(FunctionToolOutput::from_text(
+        lines.join("\n"),
+        Some(true),
+    )))
 }
 
 async fn handle_task_output(
@@ -961,7 +1102,15 @@ async fn handle_task_output(
     let arguments = function_arguments(&invocation.payload)?;
     let args: TaskOutputArgs = parse_arguments(arguments)?;
     let task_state = claude_task_state(&args.task_id)?;
-    let yield_time_ms = if args.block { args.timeout } else { 100 };
+    let kimi_code = is_kimi_code(&invocation);
+    let block = args.block.unwrap_or(!kimi_code);
+    let timeout = args.timeout.unwrap_or(if kimi_code { 30 } else { 30_000 });
+    let timeout_ms = if kimi_code {
+        timeout.saturating_mul(1_000)
+    } else {
+        timeout
+    };
+    let yield_time_ms = if block { timeout_ms } else { 100 };
     let payload = ToolPayload::Function {
         arguments: json!({
             "session_id": task_state.process_id,
@@ -1065,7 +1214,7 @@ async fn handle_read(invocation: ToolInvocation) -> Result<Box<dyn ToolOutput>, 
     let path = harness_fs::checked_read_path(&invocation, &args.path, "Read")?;
     if let Some(task_id) = claude_task_id_from_output_path(&path) {
         let output = poll_claude_task_output(&invocation, task_id).await?;
-        let (body, _, _, _) = numbered_read_lines(&output, 1, DEFAULT_READ_LIMIT);
+        let (body, _, _, _) = numbered_read_lines(&output, /*offset*/ 1, DEFAULT_READ_LIMIT);
         return Ok(boxed_tool_output(FunctionToolOutput::from_text(
             body,
             Some(true),
@@ -1484,7 +1633,7 @@ fn zcode_history_has_current_file_state_for_items(
             index += 1;
             continue;
         };
-        if call_path != path {
+        if !zcode_same_path(&call_path, path) {
             index += 1;
             continue;
         }
@@ -1540,14 +1689,18 @@ fn zcode_history_resolve_path(invocation: &ToolInvocation, path: &str) -> PathBu
     if path.is_absolute() {
         path
     } else {
-        harness_fs::primary_cwd(invocation).join(path)
+        dunce::canonicalize(harness_fs::primary_cwd(invocation))
+            .unwrap_or_else(|_| harness_fs::primary_cwd(invocation))
+            .join(path)
     }
 }
 
 fn zcode_same_path(left: &Path, right: &Path) -> bool {
-    let left = left.canonicalize().unwrap_or_else(|_| left.to_path_buf());
-    let right = right.canonicalize().unwrap_or_else(|_| right.to_path_buf());
-    left == right
+    let left_candidates = harness_fs::policy_candidates_for_path(left);
+    let right_candidates = harness_fs::policy_candidates_for_path(right);
+    left_candidates
+        .iter()
+        .any(|left| right_candidates.iter().any(|right| left == right))
 }
 
 fn zcode_history_write_content_hash(arguments: &str) -> Option<String> {
@@ -2440,8 +2593,8 @@ fn build_zcode_read_session_context_prompt(
                         "user",
                         &zcode_message_id(message_index),
                         &text,
-                        None,
-                        true,
+                        /*step_finished*/ None,
+                        /*separator*/ true,
                     );
                     message_index += 1;
                 }
@@ -2455,7 +2608,7 @@ fn build_zcode_read_session_context_prompt(
                         &zcode_message_id(message_index),
                         &text,
                         Some("stop"),
-                        true,
+                        /*separator*/ true,
                     );
                     message_index += 1;
                 }
@@ -2484,8 +2637,8 @@ fn build_zcode_read_session_context_prompt(
                         "assistant",
                         &zcode_message_id(message_index),
                         &text,
-                        None,
-                        true,
+                        /*step_finished*/ None,
+                        /*separator*/ true,
                     );
                     message_index += 1;
                     item_index += 1;
@@ -2504,8 +2657,8 @@ fn build_zcode_read_session_context_prompt(
         "assistant",
         &zcode_message_id(message_index),
         &text,
-        None,
-        false,
+        /*step_finished*/ None,
+        /*separator*/ false,
     );
 
     format!(
@@ -2628,6 +2781,9 @@ fn zcode_tool_input_text(name: &str, arguments: &str) -> String {
 async fn handle_zcode_skill(
     invocation: ToolInvocation,
 ) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
+    if is_kimi_code(&invocation) {
+        return super::kimi_code_skill::handle(invocation).await;
+    }
     let arguments = function_arguments(&invocation.payload)?;
     let input: serde_json::Value = serde_json::from_str(arguments).unwrap_or_else(|_| json!({}));
     let skill = input
@@ -3713,7 +3869,11 @@ fn harness_alias_spec(name: &str) -> ToolSpec {
         description: format!("Open Interpreter harness compatibility alias for {name}."),
         strict: false,
         defer_loading: None,
-        parameters: JsonSchema::object(properties, None, Some(AdditionalProperties::from(true))),
+        parameters: JsonSchema::object(
+            properties,
+            /*required*/ None,
+            Some(AdditionalProperties::from(true)),
+        ),
         output_schema: None,
     })
 }
@@ -3765,7 +3925,7 @@ fn task_stop_spec() -> ToolSpec {
         description: "\n- Stops a running background task by its ID\n- Takes a task_id parameter identifying the task to stop\n- Returns a success or failure status\n- Use this tool when you need to terminate a long-running task\n".to_string(),
         strict: false,
         defer_loading: None,
-        parameters: JsonSchema::object(properties, None, Some(AdditionalProperties::from(false))),
+        parameters: JsonSchema::object(properties, /*required*/ None, Some(AdditionalProperties::from(false))),
         output_schema: None,
     })
 }
@@ -3928,7 +4088,7 @@ mod tests {
         tool_name: &str,
         args: serde_json::Value,
     ) -> ToolInvocation {
-        invocation_with_harness(workspace, tool_name, args, None).await
+        invocation_with_harness(workspace, tool_name, args, /*harness*/ None).await
     }
 
     async fn invocation_with_harness(
@@ -4047,7 +4207,7 @@ mod tests {
                 .expect("read written nested file"),
             "assert(true);\n"
         );
-        assert!(output.contains("File written successfully."));
+        assert_eq!(output, "Wrote 14 bytes to tests/game-logic.test.js");
     }
 
     #[tokio::test]
@@ -4225,7 +4385,7 @@ mod tests {
         let invocation = invocation(&workspace, "Bash", json!({})).await;
 
         let (output, success) =
-            zcode_bash_output(&invocation, "hello\n", None).expect("bash output");
+            zcode_bash_output(&invocation, "hello\n", /*exit_code*/ None).expect("bash output");
 
         assert_eq!(success, None);
         assert_eq!(output, "hello");
@@ -4402,7 +4562,7 @@ mod tests {
         std::fs::write(&omitted_path, "beta").expect("write omitted");
         let invocation =
             invocation_with_harness(&workspace, "Read", json!({}), Some("zcode")).await;
-        let retained_path_text = retained_path.to_string_lossy();
+        let retained_arguments = json!({ "file_path": retained_path }).to_string();
         let history = vec![ResponseItem::Message {
             id: None,
             role: "user".to_string(),
@@ -4412,7 +4572,7 @@ mod tests {
                 },
                 ContentItem::InputText {
                     text: format!(
-                        "<system-reminder>\nCalled the Read tool with the following input: {{\"file_path\":\"{retained_path_text}\"}}\nResult of calling the Read tool:\n1\talpha\n</system-reminder>"
+                        "<system-reminder>\nCalled the Read tool with the following input: {retained_arguments}\nResult of calling the Read tool:\n1\talpha\n</system-reminder>"
                     ),
                 },
             ],
@@ -4454,7 +4614,7 @@ mod tests {
         match response {
             codex_protocol::models::ResponseInputItem::FunctionCallOutput { output, .. } => {
                 let expected_cwd =
-                    std::fs::canonicalize(workspace.path()).expect("canonical workspace path");
+                    dunce::canonicalize(workspace.path()).expect("canonical workspace path");
                 let expected = format!(
                     "{HARNESS_NO_TRUNCATE_PREFIX}File does not exist. Note: your current working directory is {}.",
                     expected_cwd.display()
@@ -4491,7 +4651,7 @@ mod tests {
                 assert_eq!(output.success, Some(false));
                 let expected = format!(
                     "{HARNESS_NO_TRUNCATE_PREFIX}{}",
-                    zcode_read_token_budget_error_text(61_615)
+                    zcode_read_token_budget_error_text(/*token_count*/ 61_615)
                 );
                 assert_eq!(output.body.to_text().as_deref(), Some(expected.as_str()));
             }
@@ -4586,7 +4746,7 @@ mod tests {
         match response {
             codex_protocol::models::ResponseInputItem::FunctionCallOutput { output, .. } => {
                 let expected_path =
-                    std::fs::canonicalize(workspace.path()).expect("canonical workspace path");
+                    dunce::canonicalize(workspace.path()).expect("canonical workspace path");
                 let expected = format!(
                     "File not found: {}",
                     expected_path.join("missing-dir").display()
@@ -4630,7 +4790,7 @@ mod tests {
 
         match response {
             codex_protocol::models::ResponseInputItem::FunctionCallOutput { output, .. } => {
-                let expected_path = std::fs::canonicalize(&target).expect("canonical target");
+                let expected_path = dunce::canonicalize(&target).expect("canonical target");
                 let expected = format!(
                     "{HARNESS_NO_TRUNCATE_PREFIX}{}:2:WEB_RESEARCH_ANIMATION\n{}:4:WEB_RESEARCH_ANIMATION",
                     expected_path.display(),
@@ -4673,7 +4833,7 @@ mod tests {
 
         match response {
             codex_protocol::models::ResponseInputItem::FunctionCallOutput { output, .. } => {
-                let expected_path = std::fs::canonicalize(&target).expect("canonical target");
+                let expected_path = dunce::canonicalize(&target).expect("canonical target");
                 let expected = format!(
                     "{HARNESS_NO_TRUNCATE_PREFIX}{}:1:WEB_RESEARCH_ANIMATION first\n{}:2:WEB_RESEARCH_ANIMATION second\n\n[Showing results with pagination = limit: 2]",
                     expected_path.display(),
@@ -4842,7 +5002,7 @@ mod tests {
         ];
 
         assert_eq!(
-            zcode_agent_rollout_stats(&history, 99),
+            zcode_agent_rollout_stats(&history, /*fallback_duration_ms*/ 99),
             ZCodeAgentRolloutStats {
                 tool_uses: 2,
                 duration_ms: 12_345,

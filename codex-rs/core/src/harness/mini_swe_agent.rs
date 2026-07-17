@@ -86,6 +86,7 @@ pub(crate) fn inject_no_tool_call_format_error(stream: ResponseStream) -> Respon
                 | Ok(ResponseEvent::OutputTextDelta(_))
                 | Ok(ResponseEvent::ToolCallInputDelta { .. })
                 | Ok(ResponseEvent::ReasoningSummaryDelta { .. })
+                | Ok(ResponseEvent::ReasoningSummaryDone { .. })
                 | Ok(ResponseEvent::ReasoningContentDelta { .. })
                 | Ok(ResponseEvent::ReasoningSummaryPartAdded { .. })
                 | Ok(ResponseEvent::RateLimits(_))
@@ -599,7 +600,11 @@ mod tests {
             description: "bash".to_string(),
             strict: false,
             defer_loading: None,
-            parameters: codex_tools::JsonSchema::object(BTreeMap::new(), None, None),
+            parameters: codex_tools::JsonSchema::object(
+                BTreeMap::new(),
+                /*required*/ None,
+                /*additional_properties*/ None,
+            ),
             output_schema: None,
         })
     }
@@ -637,7 +642,7 @@ mod tests {
     fn first_user_message_is_wrapped_with_mini_prompt() {
         let prompt = Prompt {
             input: vec![ResponseItem::Message {
-                id: Some("user".to_string()),
+                id: Some(std::convert::identity("user".to_string())),
                 role: "user".to_string(),
                 content: vec![ContentItem::InputText {
                     text: "do the task".to_string(),
@@ -674,7 +679,7 @@ mod tests {
         let prompt = Prompt {
             input: vec![
                 ResponseItem::Message {
-                    id: Some("user".to_string()),
+                    id: Some(std::convert::identity("user".to_string())),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
                         text: "do the task".to_string(),
@@ -684,7 +689,7 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::Message {
-                    id: Some("assistant".to_string()),
+                    id: Some(std::convert::identity("assistant".to_string())),
                     role: "assistant".to_string(),
                     content: vec![ContentItem::OutputText {
                         text: "I will run pwd.\n\n```bash\npwd\n```".to_string(),
@@ -694,7 +699,7 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::FunctionCall {
-                    id: Some("call".to_string()),
+                    id: Some(std::convert::identity("call".to_string())),
                     name: "bash".to_string(),
                     namespace: None,
                     arguments: "{\"command\":\"pwd\"}".to_string(),
@@ -734,7 +739,7 @@ mod tests {
     #[test]
     fn detects_terminal_submit_call() {
         let item = ResponseItem::FunctionCall {
-            id: Some("call".to_string()),
+            id: Some(std::convert::identity("call".to_string())),
             name: "bash".to_string(),
             namespace: None,
             arguments: "{\"command\":\" echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\n\"}"
@@ -756,7 +761,7 @@ mod tests {
             .expect("send created");
         tx_event
             .send(Ok(ResponseEvent::OutputItemDone(ResponseItem::Message {
-                id: Some("assistant".to_string()),
+                id: Some(std::convert::identity("assistant".to_string())),
                 role: "assistant".to_string(),
                 content: vec![ContentItem::OutputText {
                     text: "I forgot the tool.".to_string(),
@@ -814,7 +819,7 @@ mod tests {
             .expect("send created");
         tx_event
             .send(Ok(ResponseEvent::OutputItemDone(ResponseItem::Message {
-                id: Some("assistant".to_string()),
+                id: Some(std::convert::identity("assistant".to_string())),
                 role: "assistant".to_string(),
                 content: vec![ContentItem::OutputText {
                     text: "Running pwd.".to_string(),
@@ -828,7 +833,7 @@ mod tests {
         tx_event
             .send(Ok(ResponseEvent::OutputItemDone(
                 ResponseItem::FunctionCall {
-                    id: Some("call".to_string()),
+                    id: Some(std::convert::identity("call".to_string())),
                     name: "bash".to_string(),
                     namespace: None,
                     arguments: "{\"command\":\"pwd\"}".to_string(),

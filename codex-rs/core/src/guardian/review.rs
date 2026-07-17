@@ -687,7 +687,10 @@ pub(super) async fn guardian_review_session_config(
     let available_models = session
         .services
         .models_manager
-        .list_models(codex_models_manager::manager::RefreshStrategy::Offline)
+        .list_models(
+            codex_models_manager::manager::RefreshStrategy::Offline,
+            turn.config.http_client_factory(),
+        )
         .await;
     let default_review_model_id = turn.provider.approval_review_preferred_model();
     let preferred_reasoning_effort = |supports_low: bool, fallback| {
@@ -734,11 +737,20 @@ pub(super) async fn guardian_review_session_config(
         )
     };
 
+    let guardian_model_info = session
+        .services
+        .models_manager
+        .get_model_info(
+            guardian_model.as_str(),
+            &turn.config.to_models_manager_config(),
+        )
+        .await;
     let spawn_config = build_guardian_review_session_config(
         turn.config.as_ref(),
         live_network_config,
         guardian_model.as_str(),
         guardian_reasoning_effort.clone(),
+        guardian_model_info.model_messages.as_ref(),
     )?;
     Ok(GuardianReviewSessionConfig {
         spawn_config,

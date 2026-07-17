@@ -351,6 +351,7 @@ pub(crate) async fn run_turn(
                     if let Err(err) = run_auto_compact(
                         &sess,
                         Arc::clone(&step_context),
+                        /*fallback_step_context*/ None,
                         &mut client_session,
                         InitialContextInjection::BeforeLastUserMessage(Arc::clone(&world_state)),
                         CompactionReason::ContextLimit,
@@ -380,6 +381,7 @@ pub(crate) async fn run_turn(
                         && let Err(err) = run_auto_compact(
                             &sess,
                             Arc::clone(&step_context),
+                            /*fallback_step_context*/ None,
                             &mut client_session,
                             InitialContextInjection::DoNotInject,
                             CompactionReason::ContextLimit,
@@ -416,9 +418,9 @@ pub(crate) async fn run_turn(
                         if let Some(hook_prompt_message) =
                             build_hook_prompt_message(&stop_outcome.continuation_fragments)
                         {
-                            sess.record_conversation_items(
+                            sess.record_response_item_and_emit_turn_item(
                                 &turn_context,
-                                std::slice::from_ref(&hook_prompt_message),
+                                hook_prompt_message,
                             )
                             .await;
                             stop_hook_active = true;
@@ -830,68 +832,6 @@ async fn track_turn_resolved_config_analytics(
 
 const DEEPSEEK_TUI_CYCLE_TOKEN_LIMIT: i64 = 28_800;
 
-#[derive(Debug)]
-struct AutoCompactTokenStatus {
-    // Full active context usage, independent of the configured auto-compact scope.
-    active_context_tokens: i64,
-    // Usage counted against `model_auto_compact_token_limit` for the current scope.
-    auto_compact_scope_tokens: i64,
-    auto_compact_scope_limit: i64,
-    full_context_window_limit: Option<i64>,
-    auto_compact_window_prefill_tokens: Option<i64>,
-    full_context_window_limit_reached: bool,
-    token_limit_reached: bool,
-}
-
-async fn auto_compact_token_status(
-    sess: &Session,
-    turn_context: &TurnContext,
-) -> AutoCompactTokenStatus {
-    let active_context_tokens = sess.get_total_token_usage().await;
-    let mut auto_compact_window_prefill_tokens = None;
-    let (auto_compact_scope_tokens, auto_compact_scope_limit, full_context_window_limit) =
-        match turn_context.config.model_auto_compact_token_limit_scope {
-            AutoCompactTokenLimitScope::Total => (
-                active_context_tokens,
-                turn_context
-                    .model_info
-                    .auto_compact_token_limit()
-                    .unwrap_or(i64::MAX),
-                None,
-            ),
-            AutoCompactTokenLimitScope::BodyAfterPrefix => {
-                let window = sess.auto_compact_window_snapshot().await;
-                auto_compact_window_prefill_tokens = window.prefill_input_tokens;
-                let baseline = window.prefill_input_tokens.unwrap_or(active_context_tokens);
-                (
-                    active_context_tokens.saturating_sub(baseline),
-                    turn_context
-                        .config
-                        .model_auto_compact_token_limit
-                        .or_else(|| turn_context.model_info.auto_compact_token_limit())
-                        .unwrap_or(i64::MAX),
-                    turn_context.model_context_window(),
-                )
-            }
-        };
-    let full_context_window_limit_reached =
-        full_context_window_limit.is_some_and(|full_context_window_limit| {
-            active_context_tokens >= full_context_window_limit
-        });
-    let token_limit_reached =
-        auto_compact_scope_tokens >= auto_compact_scope_limit || full_context_window_limit_reached;
-
-    AutoCompactTokenStatus {
-        active_context_tokens,
-        auto_compact_scope_tokens,
-        auto_compact_scope_limit,
-        full_context_window_limit,
-        auto_compact_window_prefill_tokens,
-        full_context_window_limit_reached,
-        token_limit_reached,
-    }
-}
-
 #[instrument(level = "trace", skip_all)]
 async fn run_pre_sampling_compact(
     sess: &Arc<Session>,
@@ -909,6 +849,7 @@ async fn run_pre_sampling_compact(
         run_auto_compact(
             sess,
             step_context,
+            /*fallback_step_context*/ None,
             client_session,
             InitialContextInjection::DoNotInject,
             CompactionReason::ContextLimit,
@@ -927,6 +868,28 @@ fn comp_hash_changed(previous: Option<&str>, current: Option<&str>) -> bool {
         .is_some_and(|(previous, current)| previous != current)
 }
 
+/// Captures the current model's request-scoped state for retrying previous-model compaction.
+///
+/// Returns `None` when the active authentication does not use the Codex backend, the provider is
+/// not OpenAI, or the previous and current model are the same.
+async fn capture_current_model_fallback_step_context(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    previous_model: &str,
+) -> Option<Arc<StepContext>> {
+    let uses_codex_backend = turn_context
+        .auth_manager
+        .as_deref()
+        .is_some_and(codex_login::AuthManager::current_auth_uses_codex_backend);
+    if !uses_codex_backend
+        || !turn_context.provider.info().is_openai()
+        || previous_model == turn_context.model_info.slug
+    {
+        return None;
+    }
+    Some(sess.capture_step_context(Arc::clone(turn_context)).await)
+}
+
 /// Runs pre-sampling compaction against the previous model when its compaction compatibility
 /// hash changed or when switching to a smaller context-window model.
 ///
@@ -943,20 +906,27 @@ async fn maybe_run_previous_model_inline_compact(
         previous_turn_settings.comp_hash.as_deref(),
         turn_context.model_info.comp_hash.as_deref(),
     );
+    let previous_model = previous_turn_settings.model;
     let previous_model_turn_context = Arc::new(
         turn_context
-            .with_model(previous_turn_settings.model, &sess.services.models_manager)
+            .with_model(previous_model.clone(), &sess.services.models_manager)
             .await,
     );
 
     if should_compact_for_comp_hash_change {
-        // This pre-turn request needs a step built from the previous model's turn context.
         let step_context = sess
             .capture_step_context(Arc::clone(&previous_model_turn_context))
             .await;
+        let fallback_step_context = capture_current_model_fallback_step_context(
+            sess,
+            turn_context,
+            previous_model.as_str(),
+        )
+        .await;
         run_auto_compact(
             sess,
             step_context,
+            fallback_step_context,
             client_session,
             InitialContextInjection::DoNotInject,
             CompactionReason::CompHashChanged,
@@ -991,13 +961,19 @@ async fn maybe_run_previous_model_inline_compact(
         && previous_model_turn_context.model_info.slug != turn_context.model_info.slug
         && old_context_window > new_context_window;
     if should_run {
-        // This pre-turn request needs a step built from the previous model's turn context.
         let step_context = sess
             .capture_step_context(Arc::clone(&previous_model_turn_context))
             .await;
+        let fallback_step_context = capture_current_model_fallback_step_context(
+            sess,
+            turn_context,
+            previous_model.as_str(),
+        )
+        .await;
         run_auto_compact(
             sess,
             step_context,
+            fallback_step_context,
             client_session,
             InitialContextInjection::DoNotInject,
             CompactionReason::ModelDownshift,
@@ -1016,6 +992,7 @@ async fn maybe_run_previous_model_inline_compact(
 async fn run_auto_compact(
     sess: &Arc<Session>,
     step_context: Arc<StepContext>,
+    fallback_step_context: Option<Arc<StepContext>>,
     client_session: &mut ModelClientSession,
     initial_context_injection: InitialContextInjection,
     reason: CompactionReason,
@@ -1048,6 +1025,7 @@ async fn run_auto_compact(
             run_inline_remote_auto_compact_task_v2(
                 Arc::clone(sess),
                 step_context,
+                fallback_step_context,
                 client_session,
                 initial_context_injection,
                 reason,
@@ -1064,6 +1042,7 @@ async fn run_auto_compact(
         run_inline_remote_auto_compact_task(
             Arc::clone(sess),
             step_context,
+            fallback_step_context,
             client_session.turn_state(),
             initial_context_injection,
             reason,
@@ -1286,8 +1265,8 @@ pub(crate) async fn built_tools(
     let turn_context = step_context.turn.as_ref();
     let mcp_connection_manager = step_context.mcp.manager();
     let has_mcp_servers = mcp_connection_manager.has_servers();
-    let all_mcp_tools = mcp_connection_manager
-        .list_all_tools()
+    let all_mcp_tools = step_context
+        .mcp_tools()
         .or_cancel(cancellation_token)
         .await?;
     let loaded_plugins = sess
@@ -1300,7 +1279,7 @@ pub(crate) async fn built_tools(
 
     let apps_enabled = turn_context.apps_enabled();
     let accessible_connectors =
-        apps_enabled.then(|| connectors::accessible_connectors_from_mcp_tools(&all_mcp_tools));
+        apps_enabled.then(|| connectors::accessible_connectors_from_mcp_tools(all_mcp_tools));
     let accessible_connectors_with_enabled_state =
         accessible_connectors.as_ref().map(|connectors| {
             connectors::with_app_enabled_state(connectors.clone(), &turn_context.config)
@@ -1393,7 +1372,7 @@ pub(crate) async fn built_tools(
             .await
         };
     let mcp_tool_exposure = build_mcp_tool_exposure(
-        &all_mcp_tools,
+        all_mcp_tools,
         connectors.as_deref(),
         &turn_context.config,
         search_tool_enabled(turn_context),
@@ -1917,7 +1896,6 @@ async fn handle_assistant_item_done_in_plan_mode(
         let mut finalized_facts = None;
         if let Some(finalized_turn_item) = finalize_non_tool_response_item(
             sess,
-            turn_context,
             TurnItemContributorPolicy::Run(turn_store),
             item,
             /*plan_mode*/ true,
@@ -2020,6 +1998,21 @@ async fn drain_in_flight(
     Ok(())
 }
 
+fn assign_missing_streamed_response_item_id(
+    item: &mut ResponseItem,
+    active_item: Option<&TurnItem>,
+) {
+    if item.id().is_some() {
+        return;
+    }
+
+    let active_item_id = active_item
+        .map(TurnItem::id)
+        .filter(|item_id| !item_id.is_empty());
+    item.set_id(active_item_id);
+    Session::assign_missing_response_item_id(item);
+}
+
 #[allow(clippy::too_many_arguments)]
 #[instrument(level = "trace",
     skip_all,
@@ -2053,6 +2046,11 @@ async fn try_run_sampling_request(
         turn_context.provider.info().name.as_str(),
     );
     let sampling_timing_guard = turn_context.turn_timing_state.begin_sampling();
+    let uses_sequential_cutoff_reasoning_summaries = turn_context
+        .config
+        .features
+        .enabled(Feature::ConcurrentReasoningSummaries)
+        && turn_context.provider.info().is_openai();
     let mut stream = client_session
         .stream(
             prompt,
@@ -2138,7 +2136,10 @@ async fn try_run_sampling_request(
 
         match event {
             ResponseEvent::Created => {}
-            ResponseEvent::OutputItemDone(item) => {
+            ResponseEvent::OutputItemDone(mut item) => {
+                if turn_context.item_ids_enabled() {
+                    assign_missing_streamed_response_item_id(&mut item, active_item.as_ref());
+                }
                 if let Some((_, mut consumer)) = active_tool_argument_diff_consumer.take()
                     && let Ok(Some(event)) = consumer.finish()
                 {
@@ -2232,7 +2233,10 @@ async fn try_run_sampling_request(
                     });
                 }
             }
-            ResponseEvent::OutputItemAdded(item) => {
+            ResponseEvent::OutputItemAdded(mut item) => {
+                if turn_context.item_ids_enabled() {
+                    assign_missing_streamed_response_item_id(&mut item, /*active_item*/ None);
+                }
                 if let ResponseItem::CustomToolCall {
                     call_id,
                     name,
@@ -2249,7 +2253,6 @@ async fn try_run_sampling_request(
                 }
                 if let Some(turn_item) = handle_non_tool_response_item(
                     sess.as_ref(),
-                    turn_context.as_ref(),
                     TurnItemContributorPolicy::Skip,
                     &item,
                     plan_mode,
@@ -2360,7 +2363,10 @@ async fn try_run_sampling_request(
             }
             ResponseEvent::ModelsEtag(etag) => {
                 // Update internal state with latest models etag
-                sess.services.models_manager.refresh_if_new_etag(etag).await;
+                sess.services
+                    .models_manager
+                    .refresh_if_new_etag(etag, turn_context.config.http_client_factory())
+                    .await;
             }
             ResponseEvent::Completed {
                 token_usage,
@@ -2444,6 +2450,9 @@ async fn try_run_sampling_request(
                 delta,
                 summary_index,
             } => {
+                if uses_sequential_cutoff_reasoning_summaries {
+                    continue;
+                }
                 if let Some(active) = active_item.as_ref() {
                     if !active_item_is_streaming_to_client {
                         continue;
@@ -2462,6 +2471,9 @@ async fn try_run_sampling_request(
                 }
             }
             ResponseEvent::ReasoningSummaryPartAdded { summary_index } => {
+                if uses_sequential_cutoff_reasoning_summaries {
+                    continue;
+                }
                 if let Some(active) = active_item.as_ref() {
                     if !active_item_is_streaming_to_client {
                         continue;
@@ -2475,6 +2487,40 @@ async fn try_run_sampling_request(
                 } else {
                     error_or_panic("ReasoningSummaryPartAdded without active item".to_string());
                 }
+            }
+            ResponseEvent::ReasoningSummaryDone {
+                item_id,
+                text,
+                summary_index,
+            } => {
+                if !uses_sequential_cutoff_reasoning_summaries {
+                    continue;
+                }
+                let Some(active) = active_item.as_ref() else {
+                    continue;
+                };
+                if !active_item_is_streaming_to_client || active.id() != item_id {
+                    continue;
+                }
+                if summary_index > 0 {
+                    sess.send_event(
+                        &turn_context,
+                        EventMsg::AgentReasoningSectionBreak(AgentReasoningSectionBreakEvent {
+                            item_id: item_id.clone(),
+                            summary_index,
+                        }),
+                    )
+                    .await;
+                }
+                let event = ReasoningContentDeltaEvent {
+                    thread_id: sess.thread_id.to_string(),
+                    turn_id: turn_context.sub_id.clone(),
+                    item_id,
+                    delta: text,
+                    summary_index,
+                };
+                sess.send_event(&turn_context, EventMsg::ReasoningContentDelta(event))
+                    .await;
             }
             ResponseEvent::ReasoningContentDelta {
                 delta,

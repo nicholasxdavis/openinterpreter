@@ -193,7 +193,7 @@ pub fn default_harness_for_provider_model(
         || base_url.contains("api.moonshot.ai")
         || base_url.contains("api.moonshot.cn")
     {
-        return Some("kimi-cli");
+        return Some("kimi-code");
     }
 
     if model.contains("qwen")
@@ -333,6 +333,7 @@ impl ModelProviderInfo {
             Some(
                 AuthMode::Chatgpt
                     | AuthMode::ChatgptAuthTokens
+                    | AuthMode::Headers
                     | AuthMode::AgentIdentity
                     | AuthMode::PersonalAccessToken
             )
@@ -426,9 +427,14 @@ impl ModelProviderInfo {
             wire_api: WireApi::Responses,
             query_params: None,
             http_headers: Some(
-                [("version".to_string(), env!("CARGO_PKG_VERSION").to_string())]
-                    .into_iter()
-                    .collect(),
+                [(
+                    "version".to_string(),
+                    codex_product_info::Product::current()
+                        .codex_compatibility_version()
+                        .to_string(),
+                )]
+                .into_iter()
+                .collect(),
             ),
             env_http_headers: Some(
                 [

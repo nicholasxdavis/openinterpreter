@@ -91,14 +91,12 @@ fn read_post_tool_use_hook_inputs(home: &Path) -> Result<Vec<Value>> {
         .collect()
 }
 
-fn uploaded_file(server: &MockServer, file_size_bytes: u64) -> Value {
+fn uploaded_file(server: &MockServer) -> Value {
     json!({
         "download_url": format!("{}/download/file_123", server.uri()),
         "file_id": "file_123",
         "mime_type": "text/plain",
         "file_name": "report.txt",
-        "uri": "sediment://file_123",
-        "file_size_bytes": file_size_bytes,
     })
 }
 
@@ -203,7 +201,17 @@ async fn codex_apps_file_params_upload_environment_files_before_mcp_tool_call() 
             .await?;
             Ok(())
         });
-    let test = builder.build_with_auto_env(&server).await?;
+    // Apps MCP stays in the local control-plane environment while the file
+    // itself may live in the selected remote workspace.
+    let test = match builder.build_with_remote_and_local_env(&server).await {
+        Ok(test) => test,
+        Err(error) => {
+            // Clear expectation-bearing mocks so their drop check does not
+            // obscure the actual environment setup error.
+            server.reset().await;
+            return Err(error).context("build remote Apps file test environment");
+        }
+    };
     let mock = run_extract_turn(&test, &server).await?;
 
     let requests = mock.requests();
@@ -230,7 +238,7 @@ async fn codex_apps_file_params_upload_environment_files_before_mcp_tool_call() 
 
     assert_eq!(
         apps_tool_call.pointer("/params/arguments/file"),
-        Some(&uploaded_file(&server, STREAMED_FILE_SIZE as u64))
+        Some(&uploaded_file(&server))
     );
     assert_eq!(
         apps_tool_call.pointer("/params/_meta/_codex_apps"),
@@ -267,10 +275,7 @@ async fn codex_apps_file_params_pass_uploaded_file_to_post_tool_use_hook() -> Re
 
     let hook_inputs = read_post_tool_use_hook_inputs(test.codex_home_path())?;
     assert_eq!(hook_inputs.len(), 1);
-    assert_eq!(
-        hook_inputs[0]["tool_input"]["file"],
-        uploaded_file(&server, /*file_size_bytes*/ 11)
-    );
+    assert_eq!(hook_inputs[0]["tool_input"]["file"], uploaded_file(&server));
 
     server.verify().await;
     Ok(())

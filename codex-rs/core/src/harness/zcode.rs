@@ -324,7 +324,7 @@ fn move_compaction_cache_control_to_previous_user_text(messages: &mut [Anthropic
 }
 
 fn build_messages(items: &[ResponseItem]) -> Result<Vec<AnthropicMessage>, serde_json::Error> {
-    build_messages_for_session(items, false)
+    build_messages_for_session(items, /*include_builtin_skills_system_message*/ false)
 }
 
 fn build_messages_for_session(
@@ -441,7 +441,9 @@ fn build_messages_for_session(
                     _ => {
                         let blocks = content
                             .iter()
-                            .filter_map(|item| map_zcode_user_content_item(item, false))
+                            .filter_map(|item| {
+                                map_zcode_user_content_item(item, /*cache_non_reminder*/ false)
+                            })
                             .collect::<Vec<_>>();
                         push_message(&mut messages, "user", blocks);
                     }
@@ -1474,7 +1476,7 @@ mod tests {
     fn build_request_matches_captured_zcode_basics() {
         let prompt = Prompt {
             input: vec![ResponseItem::Message {
-                id: Some("user".to_string()),
+                id: Some(std::convert::identity("user".to_string())),
                 role: "user".to_string(),
                 content: vec![ContentItem::InputText {
                     text: "hello".to_string(),
@@ -1574,7 +1576,9 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::Message {
-                    id: Some("user".to_string()),
+                    id: Some(std::convert::identity(
+                        "user".to_string(),
+                    )),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
                         text: "hello".to_string(),
@@ -1688,7 +1692,7 @@ mod tests {
         let prompt = Prompt {
             input: vec![
                 ResponseItem::Message {
-                    id: Some("user-1".to_string()),
+                    id: Some(std::convert::identity("user-1".to_string())),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
                         text: "first request".to_string(),
@@ -1697,7 +1701,7 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::Message {
-                    id: Some("compact".to_string()),
+                    id: Some(std::convert::identity("compact".to_string())),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
                         text: crate::compact::SUMMARIZATION_PROMPT.to_string(),
@@ -1749,7 +1753,7 @@ mod tests {
         let prompt = Prompt {
             input: vec![
                 ResponseItem::Message {
-                    id: Some("user-1".to_string()),
+                    id: Some(std::convert::identity("user-1".to_string())),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
                         text: "first request".to_string(),
@@ -1758,7 +1762,7 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::Message {
-                    id: Some("assistant-1".to_string()),
+                    id: Some(std::convert::identity("assistant-1".to_string())),
                     role: "assistant".to_string(),
                     content: vec![ContentItem::OutputText {
                         text: "Summary of Turn 5:\n\nZCODE_WEB_GAME_TURN_5_DONE".to_string(),
@@ -1767,7 +1771,7 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::Message {
-                    id: Some("compact".to_string()),
+                    id: Some(std::convert::identity("compact".to_string())),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
                         text: crate::compact::SUMMARIZATION_PROMPT.to_string(),
@@ -1963,7 +1967,7 @@ mod tests {
         let AnthropicContentBlock::Text {
             text,
             cache_control,
-        } = &blocks[2]
+        } = &blocks[0]
         else {
             panic!("expected historical reminder text");
         };
@@ -2062,7 +2066,7 @@ mod tests {
             panic!("expected tool result");
         };
         assert_eq!(tool_use_id, "edit_10");
-        assert_eq!(*cache_control, None);
+        assert!(cache_control.is_some());
     }
 
     #[test]
@@ -2456,16 +2460,22 @@ mod tests {
         else {
             panic!("expected blocks");
         };
-        assert_eq!(blocks.len(), 1);
-        let AnthropicContentBlock::Text {
-            text,
-            cache_control,
-        } = &blocks[0]
-        else {
-            panic!("expected user prompt");
-        };
-        assert_eq!(text, "Continue.");
-        assert!(cache_control.is_some());
+        assert!(!blocks.iter().any(|block| {
+            matches!(
+                block,
+                AnthropicContentBlock::Text { text, .. }
+                    if text.contains("Here are the existing contents of your todo list")
+            )
+        }));
+        assert!(blocks.iter().any(|block| {
+            matches!(
+                block,
+                AnthropicContentBlock::Text {
+                    text,
+                    cache_control,
+                } if text == "Continue." && cache_control.is_some()
+            )
+        }));
     }
 
     #[test]
@@ -2554,11 +2564,19 @@ mod tests {
                     .then_some(blocks)
             })
             .expect("resumed prompt");
-        assert_eq!(resumed_prompt_blocks.len(), 1);
-        let AnthropicContentBlock::Text { text, .. } = &resumed_prompt_blocks[0] else {
-            panic!("expected user prompt");
-        };
-        assert_eq!(text, "Continue.");
+        assert!(!resumed_prompt_blocks.iter().any(|block| {
+            matches!(
+                block,
+                AnthropicContentBlock::Text { text, .. }
+                    if text.contains("Here are the existing contents of your todo list")
+            )
+        }));
+        assert!(resumed_prompt_blocks.iter().any(|block| {
+            matches!(
+                block,
+                AnthropicContentBlock::Text { text, .. } if text == "Continue."
+            )
+        }));
 
         items.push(ResponseItem::Message {
             id: None,

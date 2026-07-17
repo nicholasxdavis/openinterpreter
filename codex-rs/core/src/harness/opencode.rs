@@ -793,7 +793,7 @@ mod tests {
         let prompt = Prompt {
             input: vec![
                 ResponseItem::Message {
-                    id: Some("developer".to_string()),
+                    id: Some(std::convert::identity("developer".to_string())),
                     role: "developer".to_string(),
                     content: vec![ContentItem::InputText {
                         text: QA_TESTING_SKILLS_INSTRUCTIONS.to_string(),
@@ -803,7 +803,7 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
                 ResponseItem::Message {
-                    id: Some("user".to_string()),
+                    id: Some(std::convert::identity("user".to_string())),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
                         text: "Run the QA pass".to_string(),

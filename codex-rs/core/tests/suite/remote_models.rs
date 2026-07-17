@@ -103,7 +103,12 @@ async fn remote_models_get_model_info_uses_longest_matching_prefix() -> Result<(
         provider,
     );
 
-    manager.list_models(RefreshStrategy::OnlineIfUncached).await;
+    manager
+        .list_models(
+            RefreshStrategy::OnlineIfUncached,
+            codex_core::test_support::default_http_client_factory(),
+        )
+        .await;
 
     let model_info = manager
         .get_model_info("gpt-5.3-codex-test", &config.to_models_manager_config())
@@ -866,7 +871,12 @@ async fn remote_models_do_not_append_removed_builtin_presets() -> Result<()> {
         provider,
     );
 
-    let available = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
+    let available = manager
+        .list_models(
+            RefreshStrategy::OnlineIfUncached,
+            codex_core::test_support::default_http_client_factory(),
+        )
+        .await;
     let remote = available
         .iter()
         .find(|model| model.model == "remote-alpha")
@@ -927,7 +937,12 @@ async fn remote_models_merge_adds_new_high_priority_first() -> Result<()> {
         provider,
     );
 
-    let available = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
+    let available = manager
+        .list_models(
+            RefreshStrategy::OnlineIfUncached,
+            codex_core::test_support::default_http_client_factory(),
+        )
+        .await;
     assert_eq!(
         available.first().map(|model| model.model.as_str()),
         Some("remote-top")
@@ -974,7 +989,12 @@ async fn remote_models_merge_replaces_overlapping_model() -> Result<()> {
         provider,
     );
 
-    let available = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
+    let available = manager
+        .list_models(
+            RefreshStrategy::OnlineIfUncached,
+            codex_core::test_support::default_http_client_factory(),
+        )
+        .await;
     let overridden = available
         .iter()
         .find(|model| model.model == slug)
@@ -1018,7 +1038,12 @@ async fn remote_models_merge_preserves_bundled_models_on_empty_response() -> Res
         provider,
     );
 
-    let available = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
+    let available = manager
+        .list_models(
+            RefreshStrategy::OnlineIfUncached,
+            codex_core::test_support::default_http_client_factory(),
+        )
+        .await;
     let bundled_slug = bundled_model_slug();
     assert!(
         available.iter().any(|model| model.model == bundled_slug),
@@ -1067,6 +1092,7 @@ async fn remote_models_request_times_out_after_5s() -> Result<()> {
             &None,
             /*allow_provider_model_fallback*/ false,
             RefreshStrategy::OnlineIfUncached,
+            codex_core::test_support::default_http_client_factory(),
         ),
     )
     .await;
@@ -1139,11 +1165,17 @@ async fn remote_models_hide_picker_only_models() -> Result<()> {
             &None,
             /*allow_provider_model_fallback*/ false,
             RefreshStrategy::OnlineIfUncached,
+            codex_core::test_support::default_http_client_factory(),
         )
         .await;
     assert_eq!(selected, bundled_default_model_slug());
 
-    let available = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
+    let available = manager
+        .list_models(
+            RefreshStrategy::OnlineIfUncached,
+            codex_core::test_support::default_http_client_factory(),
+        )
+        .await;
     let hidden = available
         .iter()
         .find(|model| model.model == "codex-auto-balanced")
@@ -1164,7 +1196,12 @@ async fn wait_for_model_available(manager: &SharedModelsManager, slug: &str) -> 
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
         if let Some(model) = {
-            let guard = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
+            let guard = manager
+                .list_models(
+                    RefreshStrategy::OnlineIfUncached,
+                    codex_core::test_support::default_http_client_factory(),
+                )
+                .await;
             guard.iter().find(|model| model.model == slug).cloned()
         } {
             return model;

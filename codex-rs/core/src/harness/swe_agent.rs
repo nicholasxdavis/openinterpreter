@@ -313,7 +313,7 @@ fn swe_observation_content(
 }
 
 fn normalize_bash_observation(content: &str, command: Option<&str>) -> String {
-    if is_timeout_observation(content, None, command)
+    if is_timeout_observation(content, /*structured*/ None, command)
         && let Some(command) = command
     {
         return format_swe_timeout(command);
@@ -592,7 +592,7 @@ mod tests {
     fn builds_observed_initial_request_shape() {
         let prompt = Prompt {
             input: vec![ResponseItem::Message {
-                id: Some("user".to_string()),
+                id: Some(std::convert::identity("user".to_string())),
                 role: "user".to_string(),
                 content: vec![ContentItem::InputText {
                     text: "Fix it.".to_string(),
@@ -741,7 +741,7 @@ mod tests {
         );
 
         assert_eq!(
-            swe_observation_content(&output, None),
+            swe_observation_content(&output, /*command*/ None),
             Some("hello\n".to_string())
         );
     }
@@ -753,7 +753,7 @@ mod tests {
         );
 
         assert_eq!(
-            swe_observation_content(&output, None),
+            swe_observation_content(&output, /*command*/ None),
             Some("bash: R: command not found\n".to_string())
         );
     }
@@ -824,7 +824,7 @@ mod tests {
         let prompt = Prompt {
             input: vec![
                 ResponseItem::Message {
-                    id: Some("user".to_string()),
+                    id: Some(std::convert::identity("user".to_string())),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
                         text: "Fix it.".to_string(),
